@@ -17,7 +17,7 @@ void strCallback_labview_ml(const std_msgs::String::ConstPtr &msg)
     std::string data_delimiter = ",";
     int index = raw_data.find(type_delimiter);
     std::string materials_str = raw_data.substr(0, index);
-    std::string values_str = raw_data.substr(index, raw_data.end);
+    std::string values_str = raw_data.substr(index);
     ROS_INFO("Labview result materials: %s", materials_str.c_str());
     ROS_INFO("Labview result values: %s", values_str.c_str());
 }
