@@ -8,39 +8,136 @@
 #include <message_filters/sync_policies/approximate_time.h>
 #include <message_filters/synchronizer.h>
 
-//#include <isi_hes_msgs/Spectra.h>
-//#include <isi_hes_msgs/Ml.h>
+#include <isi_hes_msgs/Spectra.h>
+#include <isi_hes_msgs/Ml.h>
 
 #include "std_msgs/String.h"
+#include "std_msgs/Float64.h"
 
 #include <string>
+#include <stdlib.h> /* atof */
 
 typedef message_filters::sync_policies::ApproximateTime<
     std_msgs::String, std_msgs::String, std_msgs::String, std_msgs::String>
     policy_t;
 
-class StringTime {
-    public:
+class StringTime
+{
+public:
     std::string string;
     ros::Time time;
-  public:
-    StringTime(std::string _string, ros::Time _time){
+
+public:
+    StringTime(std::string _string, ros::Time _time)
+    {
         string = _string;
         time = _time;
     }
 };
 
-StringTime LVWavenumber = StringTime("",ros::Time(0));
-StringTime LVIntensity = StringTime("",ros::Time(0));
-StringTime LVMl = StringTime("",ros::Time(0));
-StringTime LVHeader = StringTime("",ros::Time(0));
-
-void ProcessLVMl(std::string ml_data, ros::Time time){
-
+template<typename T>
+void printVector(const T& t) {
+    std::copy(t.cbegin(), t.cend(), std::ostream_iterator<typename T::value_type>(std::cout, ", "));
 }
 
-void labviewCb(StringTime wavenumber,StringTime intensity,
-                StringTime &ml,StringTime &header)
+template<typename T>
+void printVectorInVector(const T& t) {
+    std::for_each(t.cbegin(), t.cend(), printVector<typename T::value_type>);
+}
+
+ros::Publisher pub_ml;
+ros::Publisher pub_spectra;
+
+StringTime LVWavenumber = StringTime("", ros::Time(0));
+StringTime LVIntensity = StringTime("", ros::Time(0));
+StringTime LVMl = StringTime("", ros::Time(0));
+StringTime LVHeader = StringTime("", ros::Time(0));
+
+void delim_string_to_vector(std::string string, std::vector<double> &output_vector, std::string delimiter = ",")
+{
+    size_t pos = 0;
+    std::string token_s;
+    // Cycle though each token in string when splitting by ',' delimiter
+    while ((pos = string.find(delimiter)) != std::string::npos)
+    {
+        // Get token by index of delimeter in string
+        token_s = string.substr(0, pos);
+        // Convert token to double
+        double token_d = atof(token_s.c_str());
+        // Add token to vector
+        output_vector.push_back(token_d);
+        // Remove token from original string
+        string.erase(0, pos + delimiter.length());
+    }
+    double token_d = atof(string.c_str());
+    output_vector.push_back(token_d);
+}
+
+void delim_string_to_vector(std::string string, std::vector<std::string> &output_vector, std::string delimiter = ",")
+{
+    size_t pos = 0;
+    std::string token_s;
+    // Cycle though each token in string when splitting by ',' delimiter
+    while ((pos = string.find(delimiter)) != std::string::npos)
+    {
+        // Get token by index of delimeter in string
+        token_s = string.substr(0, pos);
+        // Add token to vector
+        output_vector.push_back(token_s);
+        // Remove token from original string
+        string.erase(0, pos + delimiter.length());
+    }
+    output_vector.push_back(string);
+}
+
+void get_sample_and_similarity_from_ml_string(std::string input_ml, std::vector<std::string> &output_samples, std::vector<double> &output_similarity)
+{
+    //Split ml string samples string and similarity string
+    std::vector<std::string> sam_sim;
+    delim_string_to_vector(input_ml, sam_sim, ";");
+
+    //Split samples string into samples string vector
+    std::vector<std::string> samples;
+    delim_string_to_vector(sam_sim.at(0), samples, ",");
+    //Split similarity string into simiarity double vector
+    std::vector<double> similarity;
+    delim_string_to_vector(sam_sim.at(1), similarity, ",");
+
+    output_samples = samples;
+    output_similarity = similarity;
+}
+
+void PublishMl(StringTime ml)
+{
+    isi_hes_msgs::Ml ml_msg;
+    ml_msg.header.stamp = ml.time;
+
+    std::vector<std::string> samples;
+    std::vector<double> similarity;
+    get_sample_and_similarity_from_ml_string(ml.string, samples, similarity);
+
+    ml_msg.samples = samples;
+    ml_msg.similarity = similarity;
+    pub_ml.publish(ml_msg);
+}
+
+void PublishSpectra(StringTime wavenumber, StringTime intensity)
+{
+    isi_hes_msgs::Spectra spectra_msg;
+    spectra_msg.header.stamp = wavenumber.time;
+
+    //Split wavenumber and intensity strings into vector doubles
+    std::vector<double> wavenumber_vals, intensity_vals;
+    delim_string_to_vector(wavenumber.string, wavenumber_vals, ",");
+    delim_string_to_vector(intensity.string, intensity_vals, ",");
+
+    spectra_msg.wavenumber = wavenumber_vals;
+    spectra_msg.intensity = intensity_vals;
+    pub_spectra.publish(spectra_msg);
+}
+
+void labviewCb(StringTime wavenumber, StringTime intensity,
+               StringTime &ml, StringTime &header)
 {
     ros::Duration maxSyncTime(3);
 
@@ -52,64 +149,74 @@ void labviewCb(StringTime wavenumber,StringTime intensity,
     timeArray[3] = header.time;
 
     // Find oldest and youngest message in array
-    ros::Time tempSmallest = timeArray[0];
-    ros::Time tempLargest = timeArray[0];
-    for(int i=0; i<4; i++) {
-        if(tempSmallest>timeArray[i]) {
-            tempSmallest=timeArray[i];
+    ros::Time tempOldest = timeArray[0];
+    ros::Time tempYoungest = timeArray[0];
+    bool isInitalised = false;
+    for (int i = 0; i < 4; i++)
+    {
+        if (timeArray[i] == ros::Time(0))
+        {
+            // message hasn't been initalised so return untill all data arives
+            return;
         }
-        if(tempLargest>timeArray[i]) {
-            tempLargest=timeArray[i];
+        if (tempOldest > timeArray[i])
+        {
+            tempOldest = timeArray[i];
+        }
+        if (tempYoungest > timeArray[i])
+        {
+            tempYoungest = timeArray[i];
         }
     }
 
     // Calcuate the time difference between oldest and youngest message
-    ros::Duration timeSync = tempLargest - tempSmallest;
+    ros::Duration timeSync = tempYoungest - tempOldest;
     // Calcuate the time difference of oldest message from now
-    ros::Duration timeFromNow = ros::Time::now() - tempLargest;
+    ros::Duration timeFromNow = ros::Time::now() - tempYoungest;
 
     //Check messages are in sync with each other and aren't too old
-    if (timeFromNow <= maxSyncTime){
-        if (timeSync <= maxSyncTime){
+    if (timeFromNow <= maxSyncTime)
+    {
+        if (timeSync <= maxSyncTime)
+        {
             // Message are in sync
-            ProcessLVMl(ml.string,ros::Time::now());
-        } else {
+            PublishMl(ml);
+            PublishSpectra(wavenumber, intensity);
+        }
+        else
+        {
             // Messages are too far out of sync
             std::cout << timeSync << std::endl;
-            ROS_ERROR("messages are not in sync");
+            ROS_ERROR("isi hes string messages are not in sync");
+            return;
         }
-    } else {
-        // Oldest message is too old from current time
-        std::cout << timeFromNow << std::endl;
     }
-
-    /*
-    ROS_INFO("Labview machine learning raw data: [%s]", msg->data.c_str());
-    std::string raw_data = msg->data;
-    std::string type_delimiter = ";";
-    std::string data_delimiter = ",";
-    int index = raw_data.find(type_delimiter);
-    std::string materials_str = raw_data.substr(0, index);
-    std::string values_str = raw_data.substr(index);
-    ROS_INFO("Labview result materials: %s", materials_str.c_str());
-    ROS_INFO("Labview result values: %s", values_str.c_str());
-     */
+    else
+    {
+        // Oldest message is too old from current time
+        ROS_ERROR("isi hes string messages are too old");
+        return;
+    }
 }
 
-void LVwavenumberCb(const std_msgs::String::ConstPtr &msg){
-    LVWavenumber = StringTime(msg->data,ros::Time::now());
+void LVwavenumberCb(const std_msgs::String::ConstPtr &msg)
+{
+    LVWavenumber = StringTime(msg->data, ros::Time::now());
 }
 
-void LVintensityCb(const std_msgs::String::ConstPtr &msg){
-    LVIntensity = StringTime(msg->data,ros::Time::now());
+void LVintensityCb(const std_msgs::String::ConstPtr &msg)
+{
+    LVIntensity = StringTime(msg->data, ros::Time::now());
 }
 
-void LVmlCb(const std_msgs::String::ConstPtr &msg){
-    LVMl = StringTime(msg->data,ros::Time::now());
+void LVmlCb(const std_msgs::String::ConstPtr &msg)
+{
+    LVMl = StringTime(msg->data, ros::Time::now());
 }
 
-void LVheaderCb(const std_msgs::String::ConstPtr &msg){
-    LVHeader = StringTime(msg->data,ros::Time::now());
+void LVheaderCb(const std_msgs::String::ConstPtr &msg)
+{
+    LVHeader = StringTime(msg->data, ros::Time::now());
 }
 
 int main(int argc, char **argv)
@@ -119,9 +226,8 @@ int main(int argc, char **argv)
     ros::NodeHandle p_nh("~");
 
     // Publisher creation
-    // TODO finish creating these publishers
-    ros::Publisher pub_ml = nh.advertise<std_msgs::String>("/isi/isi_hes_ml", 1000);
-    ros::Publisher pub_spectra = nh.advertise<std_msgs::String>("/isi/isi_hes_spectra", 1000);
+    pub_ml = nh.advertise<isi_hes_msgs::Ml>("/isi/isi_hes_ml", 1000);
+    pub_spectra = nh.advertise<isi_hes_msgs::Spectra>("/isi/isi_hes_spectra", 1000);
 
     // Subscribers creation
     ros::Subscriber sub_wavenumber = nh.subscribe("/isi/wavenumber", 1000, LVwavenumberCb);
@@ -132,7 +238,7 @@ int main(int argc, char **argv)
     ros::Rate r(10); // 10 hz
     while (ros::ok())
     {
-        labviewCb(LVWavenumber,LVIntensity,LVMl,LVHeader);
+        labviewCb(LVWavenumber, LVIntensity, LVMl, LVHeader);
         ros::spinOnce();
         r.sleep();
     }
