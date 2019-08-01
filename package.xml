@@ -15,12 +15,18 @@
   <url type="website">http://www.is-instruments.com</url>
 
   <buildtool_depend>catkin</buildtool_depend>
+  <build_depend>isi_hes_msgs</build_depend>
+
   <depend>roscpp</depend>
   <depend>rospy</depend>
   <depend>camera_info_manager</depend>
   <depend>image_transport</depend>
   <depend>nodelet</depend>
   <depend>sensor_msgs</depend>
+  <depend>std_msgs</depend>
+
+  <exec_depend>isi_hes_msgs</exec_depend>
+  
 
 </package>
 
