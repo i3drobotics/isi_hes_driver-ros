@@ -1,0 +1,13 @@
+<?xml version="1.0"?>
+<launch>
+  <!-- Simulate pose in map -->
+  <node name="map_to_raman" pkg="tf2_ros" type="static_transform_publisher"
+        args="2 0.5 1 0.3145 1.5070 0.707 map raman" />
+  
+  <!-- Labview Simulation -->
+  <node pkg="isi_hes_driver" type="simulate_labview_msgs" name="simulate_labview_msgs" output="screen" />
+  <!-- Message processing -->
+  <node pkg="isi_hes_driver" type="process_labview_msgs" name="process_labview_msgs" output="screen" />
+
+
+</launch>
