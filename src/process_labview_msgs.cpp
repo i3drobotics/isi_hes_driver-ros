@@ -8,6 +8,10 @@
 #include <message_filters/sync_policies/approximate_time.h>
 #include <message_filters/synchronizer.h>
 
+#include <tf2_ros/transform_listener.h>
+#include <geometry_msgs/TransformStamped.h>
+#include <geometry_msgs/PoseWithCovariance.h>
+
 #include <isi_hes_msgs/Spectra.h>
 #include <isi_hes_msgs/Ml.h>
 
@@ -52,6 +56,8 @@ StringTime LVWavenumber = StringTime("", ros::Time(0));
 StringTime LVIntensity = StringTime("", ros::Time(0));
 StringTime LVMl = StringTime("", ros::Time(0));
 StringTime LVHeader = StringTime("", ros::Time(0));
+std::string parent_frame = "map"; // TODO: As a parameter
+std::string sensor_frame = "raman"; // TODO: As a parameter
 
 void delim_string_to_vector(std::string string, std::vector<double> &output_vector, std::string delimiter = ",")
 {
@@ -107,32 +113,73 @@ void get_sample_and_similarity_from_ml_string(std::string input_ml, std::vector<
     output_similarity = similarity;
 }
 
-void PublishMl(StringTime ml)
+// Listens to tf to know the sensor position at sample time
+bool getSensorAndSamplePose(const ros::Time & query_time, 
+                            geometry_msgs::PoseWithCovariance & sensor_pose, 
+                            geometry_msgs::PoseWithCovariance & sample_pose)
+{
+  // TODO: Get the position at sample time and not just current time
+  tf2_ros::Buffer tfBuffer;
+  tf2_ros::TransformListener tfListener(tfBuffer);
+
+  geometry_msgs::TransformStamped ts;
+  try{
+    ts = tfBuffer.lookupTransform(parent_frame, sensor_frame, query_time, ros::Duration(2.0));
+
+    // message translationsensor_frame,
+    sensor_pose.pose.position.x = ts.transform.translation.x;
+    sensor_pose.pose.position.y = ts.transform.translation.y;
+    sensor_pose.pose.position.z = ts.transform.translation.z;
+    sensor_pose.pose.orientation.x = ts.transform.rotation.x;
+    sensor_pose.pose.orientation.y = ts.transform.rotation.y;
+    sensor_pose.pose.orientation.z = ts.transform.rotation.z;
+    sensor_pose.pose.orientation.w = ts.transform.rotation.w;
+
+    // TODO: Calculate sample pose
+    sample_pose = sensor_pose;
+
+    return true;
+  }
+  catch (tf2::TransformException &ex) {
+    ROS_WARN("%s",ex.what());
+    return false;
+  }
+}
+
+
+void PublishMl(StringTime ml, const geometry_msgs::PoseWithCovariance & sensor_pose, const geometry_msgs::PoseWithCovariance & sample_pose)
 {
     isi_hes_msgs::Ml ml_msg;
     ml_msg.header.stamp = ml.time;
+    ml_msg.header.frame_id = sensor_frame;
 
+    // Obtain samples and similarity
     std::vector<std::string> samples;
     std::vector<double> similarity;
     get_sample_and_similarity_from_ml_string(ml.string, samples, similarity);
-
     ml_msg.samples = samples;
     ml_msg.similarity = similarity;
+    ml_msg.sensor_pose = sensor_pose;
+    ml_msg.sample_pose = sample_pose;
     pub_ml.publish(ml_msg);
 }
 
-void PublishSpectra(StringTime wavenumber, StringTime intensity)
+void PublishSpectra(StringTime wavenumber, StringTime intensity, const geometry_msgs::PoseWithCovariance & sensor_pose, const geometry_msgs::PoseWithCovariance & sample_pose)
 {
     isi_hes_msgs::Spectra spectra_msg;
     spectra_msg.header.stamp = wavenumber.time;
+    spectra_msg.header.frame_id = sensor_frame;
 
     //Split wavenumber and intensity strings into vector doubles
     std::vector<double> wavenumber_vals, intensity_vals;
     delim_string_to_vector(wavenumber.string, wavenumber_vals, ",");
     delim_string_to_vector(intensity.string, intensity_vals, ",");
-
     spectra_msg.wavenumber = wavenumber_vals;
     spectra_msg.intensity = intensity_vals;
+
+    spectra_msg.sensor_pose = sensor_pose;
+    spectra_msg.sample_pose = sample_pose;
+
     pub_spectra.publish(spectra_msg);
 }
 
@@ -180,8 +227,12 @@ void labviewCb(StringTime wavenumber, StringTime intensity,
         if (timeSync <= maxSyncTime)
         {
             // Message are in sync
-            PublishMl(ml);
-            PublishSpectra(wavenumber, intensity);
+            // Obtain sensor and sample poses
+            geometry_msgs::PoseWithCovariance sen_pose;
+            geometry_msgs::PoseWithCovariance sam_pose;
+            getSensorAndSamplePose(ros::Time().now(), sen_pose, sam_pose); // NOTE:  should be sync time
+            PublishMl(ml, sen_pose, sam_pose);
+            PublishSpectra(wavenumber, intensity, sen_pose, sam_pose);
         }
         else
         {
@@ -235,7 +286,7 @@ int main(int argc, char **argv)
     ros::Subscriber sub_ml = nh.subscribe("/isi/ml", 1000, LVmlCb);
     ros::Subscriber sub_header = nh.subscribe("/isi/header", 1000, LVheaderCb);
 
-    ros::Rate r(10); // 10 hz
+    ros::Rate r(1); // 10 hz
     while (ros::ok())
     {
         labviewCb(LVWavenumber, LVIntensity, LVMl, LVHeader);
