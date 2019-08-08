@@ -17,6 +17,8 @@
 
 #include "std_msgs/String.h"
 #include "std_msgs/Float64.h"
+#include "std_msgs/Bool.h"
+#include "std_srvs/Empty.h"
 
 #include <string>
 #include <stdlib.h> /* atof */
@@ -49,8 +51,14 @@ void printVectorInVector(const T& t) {
     std::for_each(t.cbegin(), t.cend(), printVector<typename T::value_type>);
 }
 
+bool initialised = false;
+bool acquisition = false;
+
 ros::Publisher pub_ml;
 ros::Publisher pub_spectra;
+ros::Publisher pub_range;
+ros::Publisher pub_range_ok;
+ros::Publisher pub_data_ok;
 
 StringTime LVWavenumber = StringTime("", ros::Time(0));
 StringTime LVIntensity = StringTime("", ros::Time(0));
@@ -186,68 +194,85 @@ void PublishSpectra(StringTime wavenumber, StringTime intensity, const geometry_
 void labviewCb(StringTime wavenumber, StringTime intensity,
                StringTime &ml, StringTime &header)
 {
-    ros::Duration maxSyncTime(3);
 
-    // Load message times into array
-    ros::Time timeArray[4];
-    timeArray[0] = wavenumber.time;
-    timeArray[1] = intensity.time;
-    timeArray[2] = ml.time;
-    timeArray[3] = header.time;
+    // Deal with initialisation data
+    std_msgs::Float64 range_msg;
+    std_msgs::Bool range_ok_msg;
+    std_msgs::Bool data_ok_msg;
 
-    // Find oldest and youngest message in array
-    ros::Time tempOldest = timeArray[0];
-    ros::Time tempYoungest = timeArray[0];
-    bool isInitalised = false;
-    for (int i = 0; i < 4; i++)
+    // TODO:  Get range, range_ok and data_ok from labview
+
+    pub_range.publish(range_msg);
+    pub_range_ok.publish(range_ok_msg);
+    pub_data_ok.publish(data_ok_msg);
+
+    // Deal with acquisition data only during acquisition
+    if(acquisition && range_ok_msg.data && data_ok_msg.data)
     {
-        if (timeArray[i] == ros::Time(0))
-        {
-            // message hasn't been initalised so return untill all data arives
-            return;
-        }
-        if (tempOldest > timeArray[i])
-        {
-            tempOldest = timeArray[i];
-        }
-        if (tempYoungest > timeArray[i])
-        {
-            tempYoungest = timeArray[i];
-        }
+      ros::Duration maxSyncTime(3);
+
+      // Load message times into array
+      ros::Time timeArray[4];
+      timeArray[0] = wavenumber.time;
+      timeArray[1] = intensity.time;
+      timeArray[2] = ml.time;
+      timeArray[3] = header.time;
+
+      // Find oldest and youngest message in array
+      ros::Time tempOldest = timeArray[0];
+      ros::Time tempYoungest = timeArray[0];
+      bool isInitalised = false;
+      for (int i = 0; i < 4; i++)
+      {
+          if (timeArray[i] == ros::Time(0))
+          {
+              // message hasn't been initalised so return untill all data arives
+              return;
+          }
+          if (tempOldest > timeArray[i])
+          {
+              tempOldest = timeArray[i];
+          }
+          if (tempYoungest > timeArray[i])
+          {
+              tempYoungest = timeArray[i];
+          }
+      }
+
+      // Calcuate the time difference between oldest and youngest message
+      ros::Duration timeSync = tempYoungest - tempOldest;
+      // Calcuate the time difference of oldest message from now
+      ros::Duration timeFromNow = ros::Time::now() - tempYoungest;
+
+      //Check messages are in sync with each other and aren't too old
+      if (timeFromNow <= maxSyncTime)
+      {
+          if (timeSync <= maxSyncTime)
+          {
+              // Message are in sync
+              // Obtain sensor and sample poses
+              geometry_msgs::PoseWithCovariance sen_pose;
+              geometry_msgs::PoseWithCovariance sam_pose;
+              getSensorAndSamplePose(ros::Time().now(), sen_pose, sam_pose); // NOTE:  should be sync time
+              PublishMl(ml, sen_pose, sam_pose);
+              PublishSpectra(wavenumber, intensity, sen_pose, sam_pose);
+          }
+          else
+          {
+              // Messages are too far out of sync
+              std::cout << timeSync << std::endl;
+              ROS_ERROR("isi hes string messages are not in sync");
+              return;
+          }
+      }
+      else
+      {
+          // Oldest message is too old from current time
+          ROS_ERROR("isi hes string messages are too old");
+          return;
+      }
     }
 
-    // Calcuate the time difference between oldest and youngest message
-    ros::Duration timeSync = tempYoungest - tempOldest;
-    // Calcuate the time difference of oldest message from now
-    ros::Duration timeFromNow = ros::Time::now() - tempYoungest;
-
-    //Check messages are in sync with each other and aren't too old
-    if (timeFromNow <= maxSyncTime)
-    {
-        if (timeSync <= maxSyncTime)
-        {
-            // Message are in sync
-            // Obtain sensor and sample poses
-            geometry_msgs::PoseWithCovariance sen_pose;
-            geometry_msgs::PoseWithCovariance sam_pose;
-            getSensorAndSamplePose(ros::Time().now(), sen_pose, sam_pose); // NOTE:  should be sync time
-            PublishMl(ml, sen_pose, sam_pose);
-            PublishSpectra(wavenumber, intensity, sen_pose, sam_pose);
-        }
-        else
-        {
-            // Messages are too far out of sync
-            std::cout << timeSync << std::endl;
-            ROS_ERROR("isi hes string messages are not in sync");
-            return;
-        }
-    }
-    else
-    {
-        // Oldest message is too old from current time
-        ROS_ERROR("isi hes string messages are too old");
-        return;
-    }
 }
 
 void LVwavenumberCb(const std_msgs::String::ConstPtr &msg)
@@ -270,6 +295,29 @@ void LVheaderCb(const std_msgs::String::ConstPtr &msg)
     LVHeader = StringTime(msg->data, ros::Time::now());
 }
 
+bool InitialiseCb(std_srvs::Empty::Request &req, std_srvs::Empty::Response &res)
+{
+  ROS_INFO("Initialising LabView Process");
+  // TODO:  Add Labview comms
+  initialised = true;
+  return true;
+}
+bool AcquireCb(std_srvs::Empty::Request &req, std_srvs::Empty::Response &res)
+{
+  ROS_INFO("Acquiring data");
+  // TODO:  Add Labview comms
+  acquisition = true;
+  return true;
+}
+bool StopCb(std_srvs::Empty::Request &req, std_srvs::Empty::Response &res)
+{
+  ROS_INFO("Stopping LabView Process");
+  // TODO:  Add Labview comms
+  acquisition = false;
+  initialised = false;
+  return true;
+}
+
 int main(int argc, char **argv)
 {
     ros::init(argc, argv, "process_labview_msgs");
@@ -277,6 +325,10 @@ int main(int argc, char **argv)
     ros::NodeHandle p_nh("~");
 
     // Publisher creation
+    pub_range = nh.advertise<std_msgs::Float64>("/isi/range", 10);
+    pub_range_ok = nh.advertise<std_msgs::Bool>("/isi/range_ok", 10);
+    pub_data_ok = nh.advertise<std_msgs::Bool>("/isi/data_ok", 10);
+    // acquisition
     pub_ml = nh.advertise<isi_hes_msgs::Ml>("/isi/isi_hes_ml", 1000);
     pub_spectra = nh.advertise<isi_hes_msgs::Spectra>("/isi/isi_hes_spectra", 1000);
 
@@ -286,11 +338,19 @@ int main(int argc, char **argv)
     ros::Subscriber sub_ml = nh.subscribe("/isi/ml", 1000, LVmlCb);
     ros::Subscriber sub_header = nh.subscribe("/isi/header", 1000, LVheaderCb);
 
+    // Services creation
+    ros::ServiceServer ser_init = nh.advertiseService("/isi/initialise", InitialiseCb);
+    ros::ServiceServer ser_acquire = nh.advertiseService("/isi/acquire", AcquireCb);
+    ros::ServiceServer ser_stop = nh.advertiseService("/isi/stop", StopCb);
+
     ros::Rate r(1); // 10 hz
     while (ros::ok())
     {
-        labviewCb(LVWavenumber, LVIntensity, LVMl, LVHeader);
-        ros::spinOnce();
-        r.sleep();
+        if(initialised)
+        {
+          labviewCb(LVWavenumber, LVIntensity, LVMl, LVHeader);
+          ros::spinOnce();
+          r.sleep();
+        }
     }
 }
