@@ -17,6 +17,8 @@
 
 #include "std_msgs/String.h"
 #include "std_msgs/Float64.h"
+#include "std_msgs/Bool.h"
+#include "std_srvs/Empty.h"
 
 #include <string>
 #include <stdlib.h> /* atof */
@@ -39,24 +41,32 @@ public:
     }
 };
 
-template<typename T>
-void printVector(const T& t) {
+template <typename T>
+void printVector(const T &t)
+{
     std::copy(t.cbegin(), t.cend(), std::ostream_iterator<typename T::value_type>(std::cout, ", "));
 }
 
-template<typename T>
-void printVectorInVector(const T& t) {
+template <typename T>
+void printVectorInVector(const T &t)
+{
     std::for_each(t.cbegin(), t.cend(), printVector<typename T::value_type>);
 }
 
+bool initialised = false;
+bool acquisition = false;
+
 ros::Publisher pub_ml;
 ros::Publisher pub_spectra;
+ros::Publisher pub_range;
+ros::Publisher pub_range_ok;
+ros::Publisher pub_data_ok;
 
 StringTime LVWavenumber = StringTime("", ros::Time(0));
 StringTime LVIntensity = StringTime("", ros::Time(0));
 StringTime LVMl = StringTime("", ros::Time(0));
 StringTime LVHeader = StringTime("", ros::Time(0));
-std::string parent_frame = "map"; // TODO: As a parameter
+std::string parent_frame = "map";   // TODO: As a parameter
 std::string sensor_frame = "raman"; // TODO: As a parameter
 
 void delim_string_to_vector(std::string string, std::vector<double> &output_vector, std::string delimiter = ",")
@@ -114,40 +124,41 @@ void get_sample_and_similarity_from_ml_string(std::string input_ml, std::vector<
 }
 
 // Listens to tf to know the sensor position at sample time
-bool getSensorAndSamplePose(const ros::Time & query_time, 
-                            geometry_msgs::PoseWithCovariance & sensor_pose, 
-                            geometry_msgs::PoseWithCovariance & sample_pose)
+bool getSensorAndSamplePose(const ros::Time &query_time,
+                            geometry_msgs::PoseWithCovariance &sensor_pose,
+                            geometry_msgs::PoseWithCovariance &sample_pose)
 {
-  // TODO: Get the position at sample time and not just current time
-  tf2_ros::Buffer tfBuffer;
-  tf2_ros::TransformListener tfListener(tfBuffer);
+    // TODO: Get the position at sample time and not just current time
+    tf2_ros::Buffer tfBuffer;
+    tf2_ros::TransformListener tfListener(tfBuffer);
 
-  geometry_msgs::TransformStamped ts;
-  try{
-    ts = tfBuffer.lookupTransform(parent_frame, sensor_frame, query_time, ros::Duration(2.0));
+    geometry_msgs::TransformStamped ts;
+    try
+    {
+        ts = tfBuffer.lookupTransform(parent_frame, sensor_frame, query_time, ros::Duration(2.0));
 
-    // message translationsensor_frame,
-    sensor_pose.pose.position.x = ts.transform.translation.x;
-    sensor_pose.pose.position.y = ts.transform.translation.y;
-    sensor_pose.pose.position.z = ts.transform.translation.z;
-    sensor_pose.pose.orientation.x = ts.transform.rotation.x;
-    sensor_pose.pose.orientation.y = ts.transform.rotation.y;
-    sensor_pose.pose.orientation.z = ts.transform.rotation.z;
-    sensor_pose.pose.orientation.w = ts.transform.rotation.w;
+        // message translationsensor_frame,
+        sensor_pose.pose.position.x = ts.transform.translation.x;
+        sensor_pose.pose.position.y = ts.transform.translation.y;
+        sensor_pose.pose.position.z = ts.transform.translation.z;
+        sensor_pose.pose.orientation.x = ts.transform.rotation.x;
+        sensor_pose.pose.orientation.y = ts.transform.rotation.y;
+        sensor_pose.pose.orientation.z = ts.transform.rotation.z;
+        sensor_pose.pose.orientation.w = ts.transform.rotation.w;
 
-    // TODO: Calculate sample pose
-    sample_pose = sensor_pose;
+        // TODO: Calculate sample pose
+        sample_pose = sensor_pose;
 
-    return true;
-  }
-  catch (tf2::TransformException &ex) {
-    ROS_WARN("%s",ex.what());
-    return false;
-  }
+        return true;
+    }
+    catch (tf2::TransformException &ex)
+    {
+        ROS_WARN("%s", ex.what());
+        return false;
+    }
 }
 
-
-void PublishMl(StringTime ml, const geometry_msgs::PoseWithCovariance & sensor_pose, const geometry_msgs::PoseWithCovariance & sample_pose)
+void PublishMl(StringTime ml, const geometry_msgs::PoseWithCovariance &sensor_pose, const geometry_msgs::PoseWithCovariance &sample_pose)
 {
     isi_hes_msgs::Ml ml_msg;
     ml_msg.header.stamp = ml.time;
@@ -164,7 +175,7 @@ void PublishMl(StringTime ml, const geometry_msgs::PoseWithCovariance & sensor_p
     pub_ml.publish(ml_msg);
 }
 
-void PublishSpectra(StringTime wavenumber, StringTime intensity, const geometry_msgs::PoseWithCovariance & sensor_pose, const geometry_msgs::PoseWithCovariance & sample_pose)
+void PublishSpectra(StringTime wavenumber, StringTime intensity, const geometry_msgs::PoseWithCovariance &sensor_pose, const geometry_msgs::PoseWithCovariance &sample_pose)
 {
     isi_hes_msgs::Spectra spectra_msg;
     spectra_msg.header.stamp = wavenumber.time;
@@ -219,39 +230,84 @@ void labviewCb(StringTime &wavenumber, StringTime &intensity,
         }
     }
 
-    // Calcuate the time difference between oldest and youngest message
-    ros::Duration timeSync = tempYoungest - tempOldest;
-    // Calcuate the time difference of oldest message from now
-    ros::Duration timeFromNow = ros::Time::now() - tempYoungest;
+    // Deal with initialisation data
+    std_msgs::Float64 range_msg;
+    std_msgs::Bool range_ok_msg;
+    std_msgs::Bool data_ok_msg;
 
-    //Check messages are in sync with each other and aren't too old
-    if (timeFromNow <= maxSyncTime)
+    // TODO:  Get range, range_ok and data_ok from labview
+
+    pub_range.publish(range_msg);
+    pub_range_ok.publish(range_ok_msg);
+    pub_data_ok.publish(data_ok_msg);
+
+    // Deal with acquisition data only during acquisition
+    if (acquisition && range_ok_msg.data && data_ok_msg.data)
     {
-        if (timeSync <= maxSyncTime)
+        ros::Duration maxSyncTime(3);
+
+        // Load message times into array
+        ros::Time timeArray[4];
+        timeArray[0] = wavenumber.time;
+        timeArray[1] = intensity.time;
+        timeArray[2] = ml.time;
+        timeArray[3] = header.time;
+
+        // Find oldest and youngest message in array
+        ros::Time tempOldest = timeArray[0];
+        ros::Time tempYoungest = timeArray[0];
+        bool isInitalised = false;
+        for (int i = 0; i < 4; i++)
         {
-            // Message are in sync
-            // Obtain sensor and sample poses
-            geometry_msgs::PoseWithCovariance sen_pose;
-            geometry_msgs::PoseWithCovariance sam_pose;
-            getSensorAndSamplePose(ros::Time().now(), sen_pose, sam_pose); // NOTE:  should be sync time
-            PublishMl(ml, sen_pose, sam_pose);
-            PublishSpectra(wavenumber, intensity, sen_pose, sam_pose);
+            if (timeArray[i] == ros::Time(0))
+            {
+                // message hasn't been initalised so return untill all data arives
+                return;
+            }
+            if (tempOldest > timeArray[i])
+            {
+                tempOldest = timeArray[i];
+            }
+            if (tempYoungest > timeArray[i])
+            {
+                tempYoungest = timeArray[i];
+            }
+        }
+
+        // Calcuate the time difference between oldest and youngest message
+        ros::Duration timeSync = tempYoungest - tempOldest;
+        // Calcuate the time difference of oldest message from now
+        ros::Duration timeFromNow = ros::Time::now() - tempYoungest;
+
+        //Check messages are in sync with each other and aren't too old
+        if (timeFromNow <= maxSyncTime)
+        {
+            if (timeSync <= maxSyncTime)
+            {
+                // Message are in sync
+                // Obtain sensor and sample poses
+                geometry_msgs::PoseWithCovariance sen_pose;
+                geometry_msgs::PoseWithCovariance sam_pose;
+                getSensorAndSamplePose(ros::Time().now(), sen_pose, sam_pose); // NOTE:  should be sync time
+                PublishMl(ml, sen_pose, sam_pose);
+                PublishSpectra(wavenumber, intensity, sen_pose, sam_pose);
+            }
+            else
+            {
+                // Messages are too far out of sync
+                std::cout << timeSync << std::endl;
+                ROS_ERROR("isi hes string messages are not in sync");
+                return;
+            }
         }
         else
         {
-            // Messages are too far out of sync
-            std::cout << timeSync << std::endl;
-            ROS_ERROR("isi hes string messages are not in sync");
+            // Oldest message is too old from current time
+            std::cout << timeFromNow << std::endl;
+            std::cout << "Youngest: t-" << tempYoungest << ", i-" << iYoungest << std::endl;
+            ROS_ERROR("isi hes string messages are too old");
             return;
         }
-    }
-    else
-    {
-        // Oldest message is too old from current time
-        std::cout << timeFromNow << std::endl;
-        std::cout << "Youngest: t-" << tempYoungest << ", i-" << iYoungest << std::endl;
-        ROS_ERROR("isi hes string messages are too old");
-        return;
     }
 }
 
@@ -279,6 +335,29 @@ void LVheaderCb(const std_msgs::String::ConstPtr &msg)
     LVHeader = StringTime(msg->data, ros::Time::now());
 }
 
+bool InitialiseCb(std_srvs::Empty::Request &req, std_srvs::Empty::Response &res)
+{
+    ROS_INFO("Initialising LabView Process");
+    // TODO:  Add Labview comms
+    initialised = true;
+    return true;
+}
+bool AcquireCb(std_srvs::Empty::Request &req, std_srvs::Empty::Response &res)
+{
+    ROS_INFO("Acquiring data");
+    // TODO:  Add Labview comms
+    acquisition = true;
+    return true;
+}
+bool StopCb(std_srvs::Empty::Request &req, std_srvs::Empty::Response &res)
+{
+    ROS_INFO("Stopping LabView Process");
+    // TODO:  Add Labview comms
+    acquisition = false;
+    initialised = false;
+    return true;
+}
+
 int main(int argc, char **argv)
 {
     ros::init(argc, argv, "process_labview_msgs");
@@ -286,6 +365,10 @@ int main(int argc, char **argv)
     ros::NodeHandle p_nh("~");
 
     // Publisher creation
+    pub_range = nh.advertise<std_msgs::Float64>("/isi_hes/range", 10);
+    pub_range_ok = nh.advertise<std_msgs::Bool>("/isi_hes/range_ok", 10);
+    pub_data_ok = nh.advertise<std_msgs::Bool>("/isi_hes/data_ok", 10);
+    // acquisition
     pub_ml = nh.advertise<isi_hes_msgs::Ml>("/isi_hes/isi_hes_ml", 1000);
     pub_spectra = nh.advertise<isi_hes_msgs::Spectra>("/isi_hes/isi_hes_spectra", 1000);
 
@@ -295,11 +378,19 @@ int main(int argc, char **argv)
     ros::Subscriber sub_ml = nh.subscribe("/isi_hes/ml", 1000, LVmlCb);
     ros::Subscriber sub_header = nh.subscribe("/isi_hes/header", 1000, LVheaderCb);
 
-    ros::Rate r(10); // 10 hz
+    // Services creation
+    ros::ServiceServer ser_init = nh.advertiseService("/isi_hes/initialise", InitialiseCb);
+    ros::ServiceServer ser_acquire = nh.advertiseService("/isi_hes/acquire", AcquireCb);
+    ros::ServiceServer ser_stop = nh.advertiseService("/isi_hes/stop", StopCb);
+
+    ros::Rate r(1); // 10 hz
     while (ros::ok())
     {
-        labviewCb(LVWavenumber, LVIntensity, LVMl, LVHeader);
-        ros::spinOnce();
-        r.sleep();
+        if (initialised)
+        {
+            labviewCb(LVWavenumber, LVIntensity, LVMl, LVHeader);
+            ros::spinOnce();
+            r.sleep();
+        }
     }
 }
