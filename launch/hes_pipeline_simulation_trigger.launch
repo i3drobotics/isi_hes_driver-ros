@@ -1,0 +1,6 @@
+<?xml version="1.0"?>
+<launch>  
+  <!-- Labview Simulation -->
+  <node pkg="isi_hes_driver" type="simulate_labview_trigger" name="simulate_labview_trigger" output="screen" />
+
+</launch>

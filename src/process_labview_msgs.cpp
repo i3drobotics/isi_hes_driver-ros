@@ -183,7 +183,7 @@ void PublishSpectra(StringTime wavenumber, StringTime intensity, const geometry_
     pub_spectra.publish(spectra_msg);
 }
 
-void labviewCb(StringTime wavenumber, StringTime intensity,
+void labviewCb(StringTime &wavenumber, StringTime &intensity,
                StringTime &ml, StringTime &header)
 {
     ros::Duration maxSyncTime(3);
@@ -198,7 +198,8 @@ void labviewCb(StringTime wavenumber, StringTime intensity,
     // Find oldest and youngest message in array
     ros::Time tempOldest = timeArray[0];
     ros::Time tempYoungest = timeArray[0];
-    bool isInitalised = false;
+    int iYoungest = -1;
+    int iOldest = -1;
     for (int i = 0; i < 4; i++)
     {
         if (timeArray[i] == ros::Time(0))
@@ -206,12 +207,14 @@ void labviewCb(StringTime wavenumber, StringTime intensity,
             // message hasn't been initalised so return untill all data arives
             return;
         }
-        if (tempOldest > timeArray[i])
+        if (tempOldest >= timeArray[i])
         {
+            iOldest = i;
             tempOldest = timeArray[i];
         }
-        if (tempYoungest > timeArray[i])
+        if (tempYoungest >= timeArray[i])
         {
+            iYoungest = i;
             tempYoungest = timeArray[i];
         }
     }
@@ -245,6 +248,8 @@ void labviewCb(StringTime wavenumber, StringTime intensity,
     else
     {
         // Oldest message is too old from current time
+        std::cout << timeFromNow << std::endl;
+        std::cout << "Youngest: t-" << tempYoungest << ", i-" << iYoungest << std::endl;
         ROS_ERROR("isi hes string messages are too old");
         return;
     }
@@ -252,21 +257,25 @@ void labviewCb(StringTime wavenumber, StringTime intensity,
 
 void LVwavenumberCb(const std_msgs::String::ConstPtr &msg)
 {
+    //ROS_INFO("Wavenumber received");
     LVWavenumber = StringTime(msg->data, ros::Time::now());
 }
 
 void LVintensityCb(const std_msgs::String::ConstPtr &msg)
 {
+    //ROS_INFO("Intensity received");
     LVIntensity = StringTime(msg->data, ros::Time::now());
 }
 
 void LVmlCb(const std_msgs::String::ConstPtr &msg)
 {
+    //ROS_INFO("ML received");
     LVMl = StringTime(msg->data, ros::Time::now());
 }
 
 void LVheaderCb(const std_msgs::String::ConstPtr &msg)
 {
+    //ROS_INFO("Header received");
     LVHeader = StringTime(msg->data, ros::Time::now());
 }
 
@@ -277,16 +286,16 @@ int main(int argc, char **argv)
     ros::NodeHandle p_nh("~");
 
     // Publisher creation
-    pub_ml = nh.advertise<isi_hes_msgs::Ml>("/isi/isi_hes_ml", 1000);
-    pub_spectra = nh.advertise<isi_hes_msgs::Spectra>("/isi/isi_hes_spectra", 1000);
+    pub_ml = nh.advertise<isi_hes_msgs::Ml>("/isi_hes/isi_hes_ml", 1000);
+    pub_spectra = nh.advertise<isi_hes_msgs::Spectra>("/isi_hes/isi_hes_spectra", 1000);
 
     // Subscribers creation
-    ros::Subscriber sub_wavenumber = nh.subscribe("/isi/wavenumber", 1000, LVwavenumberCb);
-    ros::Subscriber sub_intensity = nh.subscribe("/isi/intensity", 1000, LVintensityCb);
-    ros::Subscriber sub_ml = nh.subscribe("/isi/ml", 1000, LVmlCb);
-    ros::Subscriber sub_header = nh.subscribe("/isi/header", 1000, LVheaderCb);
+    ros::Subscriber sub_wavenumber = nh.subscribe("/isi_hes/wavenumber", 1000, LVwavenumberCb);
+    ros::Subscriber sub_intensity = nh.subscribe("/isi_hes/intensity", 1000, LVintensityCb);
+    ros::Subscriber sub_ml = nh.subscribe("/isi_hes/ml", 1000, LVmlCb);
+    ros::Subscriber sub_header = nh.subscribe("/isi_hes/header", 1000, LVheaderCb);
 
-    ros::Rate r(1); // 10 hz
+    ros::Rate r(10); // 10 hz
     while (ros::ok())
     {
         labviewCb(LVWavenumber, LVIntensity, LVMl, LVHeader);

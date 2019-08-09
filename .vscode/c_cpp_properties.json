@@ -1,0 +1,30 @@
+{
+    "configurations": [
+        {
+            "browse": {
+                "databaseFilename": "",
+                "limitSymbolsToIncludedHeaders": true
+            },
+            "includePath": [
+                "/home/i3dr/i3dr_SBRI_ros_wstool/devel/include",
+                "/opt/ros/kinetic/include",
+                "/home/i3dr/i3dr_SBRI_ros_wstool/src/i3dr/image_pipeline/depth_image_proc/include",
+                "/home/i3dr/i3dr_SBRI_ros_wstool/src/i3dr/gscam/include",
+                "/home/i3dr/i3dr_SBRI_ros_wstool/src/i3dr/i3dr_deimos/include",
+                "/home/i3dr/i3dr_SBRI_ros_wstool/src/i3dr/i3dr_stereo_camera/include",
+                "/home/i3dr/i3dr_SBRI_ros_wstool/src/i3dr/image_pipeline/image_proc/include",
+                "/home/i3dr/i3dr_SBRI_ros_wstool/src/i3dr/pylon_camera/include",
+                "/home/i3dr/i3dr_SBRI_ros_wstool/src/i3dr/image_pipeline/stereo_image_proc/include",
+                "/home/i3dr/i3dr_SBRI_ros_wstool/src/i3dr/universal_robot/ur_kinematics/include",
+                "/home/i3dr/i3dr_SBRI_ros_wstool/src/i3dr/ur_modern_driver/include",
+                "/usr/include"
+            ],
+            "name": "Linux",
+            "intelliSenseMode": "gcc-x64",
+            "compilerPath": "/usr/bin/gcc",
+            "cStandard": "c11",
+            "cppStandard": "c++17"
+        }
+    ],
+    "version": 4
+}

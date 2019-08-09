@@ -8,6 +8,7 @@
   <node pkg="isi_hes_driver" type="simulate_labview_msgs" name="simulate_labview_msgs" output="screen" />
   <!-- Message processing -->
   <node pkg="isi_hes_driver" type="process_labview_msgs" name="process_labview_msgs" output="screen" />
-
-
+  
+  <!-- Trigger hes capture on keypress -->
+  <node pkg="isi_hes_driver" type="simulate_labview_trigger" name="simulate_labview_trigger" output="screen" />
 </launch>

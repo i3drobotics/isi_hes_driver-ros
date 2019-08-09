@@ -31,6 +31,14 @@ target_link_libraries(
 	${catkin_LIBRARIES}
 )
 
+add_executable(
+	simulate_labview_trigger src/simulate_labview_trigger.cpp
+)
+target_link_libraries(
+	simulate_labview_trigger
+	${catkin_LIBRARIES}
+)
+
 link_directories()
 add_definitions(-std=c++11)
 
