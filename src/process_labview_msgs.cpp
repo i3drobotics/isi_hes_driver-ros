@@ -53,8 +53,8 @@ void printVectorInVector(const T &t)
     std::for_each(t.cbegin(), t.cend(), printVector<typename T::value_type>);
 }
 
-bool initialised = false;
-bool acquisition = false;
+bool initialised = true;
+bool acquisition = true;
 
 ros::Publisher pub_ml;
 ros::Publisher pub_spectra;
@@ -232,8 +232,11 @@ void labviewCb(StringTime &wavenumber, StringTime &intensity,
 
     // Deal with initialisation data
     std_msgs::Float64 range_msg;
+    range_msg.data = 1.0;
     std_msgs::Bool range_ok_msg;
+    range_ok_msg.data = true;
     std_msgs::Bool data_ok_msg;
+    data_ok_msg.data = true;
 
     // TODO:  Get range, range_ok and data_ok from labview
 
