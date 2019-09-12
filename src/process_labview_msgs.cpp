@@ -119,7 +119,8 @@ private:
     }
     bool AcquireCb(std_srvs::Empty::Request &req, std_srvs::Empty::Response &res)
     {
-        if (range_state_ && check_state_)
+        //if (range_state_ && check_state_)
+        if (true)
         {
             ROS_INFO("Requesting acquisition of ISI HES Probe data");
             // Send acquire command to ISI Probe labview
@@ -184,7 +185,8 @@ private:
     StringTime LVHeader_ = StringTime("", ros::Time(0));
     StringTime LVRange_ = StringTime("", ros::Time(0));
     std::string parent_frame_ = "map";   // TODO: As a parameter
-    std::string sensor_frame_ = "raman"; // TODO: As a parameter
+    std::string sensor_frame_ = "hes_probe_base_link"; // TODO: As a parameter
+    std::string sample_frame_ = "hes_probe_standoff"; // TODO: As a paramter
     ros::Publisher pub_ml_, pub_spectra_, pub_range_;
 
     void delim_string_to_vector(std::string string, std::vector<double> &output_vector, std::string delimiter = ",")
@@ -264,8 +266,15 @@ private:
             sensor_pose.pose.orientation.z = ts.transform.rotation.z;
             sensor_pose.pose.orientation.w = ts.transform.rotation.w;
 
-            // TODO: Calculate sample pose
-            sample_pose = sensor_pose;
+            ts = tfBuffer.lookupTransform(parent_frame_, sample_frame_, query_time, ros::Duration(2.0));
+            // Calculate sample pose
+            sample_pose.pose.position.x = ts.transform.translation.x;
+            sample_pose.pose.position.y = ts.transform.translation.y;
+            sample_pose.pose.position.z = ts.transform.translation.z;
+            sample_pose.pose.orientation.x = ts.transform.rotation.x;
+            sample_pose.pose.orientation.y = ts.transform.rotation.y;
+            sample_pose.pose.orientation.z = ts.transform.rotation.z;
+            sample_pose.pose.orientation.w = ts.transform.rotation.w;
 
             return true;
         }
@@ -278,6 +287,7 @@ private:
 
     void PublishMl(StringTime ml, const geometry_msgs::PoseWithCovariance &sensor_pose, const geometry_msgs::PoseWithCovariance &sample_pose)
     {
+      ROS_INFO("Sending machine learning result");
         isi_hes_msgs::Ml ml_msg;
         ml_msg.header.stamp = ml.time;
         ml_msg.header.frame_id = sensor_frame_;
@@ -295,6 +305,7 @@ private:
 
     void PublishSpectra(StringTime wavenumber, StringTime intensity, const geometry_msgs::PoseWithCovariance &sensor_pose, const geometry_msgs::PoseWithCovariance &sample_pose)
     {
+      ROS_INFO("Sending spectra");
         isi_hes_msgs::Spectra spectra_msg;
         spectra_msg.header.stamp = wavenumber.time;
         spectra_msg.header.frame_id = sensor_frame_;
@@ -376,7 +387,8 @@ private:
                    StringTime &ml, StringTime &header)
     {
         // Deal with acquisition data only during acquisition
-        if (range_state_ && check_state_)
+        //if (range_state_ && check_state_)
+        if (true)
         {
             // Message are in sync
             // Obtain sensor and sample poses
