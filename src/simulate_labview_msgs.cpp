@@ -33,14 +33,14 @@ int main(int argc, char **argv)
 
     ros::Subscriber sub_trigger = nh.subscribe("/isi_hes/trigger", 1000, LVtriggerCb);
 
-    _pub_labview_ml = nh.advertise<std_msgs::String>("/isi_hes/ml", 100);
+    _pub_labview_ml = nh.advertise<std_msgs::String>("/isi_hes/ml_raw", 100);
     _pub_labview_wavenumber = nh.advertise<std_msgs::String>("/isi_hes/wavenumber", 100);
     _pub_labview_intensity = nh.advertise<std_msgs::String>("/isi_hes/intensity", 100);
     _pub_labview_header = nh.advertise<std_msgs::String>("/isi_hes/header", 100);
     _pub_labview_distance = nh.advertise<std_msgs::String>("isi_hes/distance", 100);
     _pub_labview_status = nh.advertise<std_msgs::String>("isi_hes/status", 100);
 
-    ros::Rate loop_rate(10);
+    ros::Rate loop_rate(0.2);
     while (ros::ok())
     {
         std_msgs::String msg_labview_status;
