@@ -26,7 +26,45 @@ Stop the currently running state
 
 7 - Laser Off (Only used internally)
 
+## Run
+
+(1) - Run processing node
+```bash
+rosrun isi_hes_driver-ros process_labview_msgs
+```
+
+(2) - Move spectrometer aproximately 1m from sample.
+
+(3) - Measure range to sample using service call
+```bash
+rosservice call /isi_hes/get_range
+```
+
+(4) - Wait for "Range response: [...]" message in console running process_labview_msgs node. If message is "Range response: out_of_range" check the position of the probe from the sample and re-run (3). Otherwise if message is "Range reponse: in_range" continue to (5).
+
+(5) - Check laser spot using service call
+```bash
+rosservice call /isi_hes/check
+```
+
+(6) - Wait for "Range response: [...]" message in console running process_labview_msgs node. If message is "check_failed" make sure laser was turned on correctly and there are no obstructions between the laser and sample then re-run (5). Otherwise if message is "Range response: check_passed" continue to (7).
+
+(7) - Run spectrometer measurement with service call
+```bash
+rosservice call /isi_hes/acquire
+```
+
+(8) - Wait for measurement to complete. The result will be published to string messages which will be handelled by process_labview_msgs and convert them to the two topics: isi/hes_spectra and isi/hes_ml_result. You should be subscibed to these messages to see the result. (You can check this by echo-ing the topic to the console)
+```bash
+rostopic echo /isi/hes_spectra
+rostopic echo /isi/hes_ml_result
+```
+
+
 ## 1. Nodes
+
+process_labview_msgs
+This handels service calls and passes messages between ros and LabView program. 
 
 ## 1.1 Subscribed topics
 
