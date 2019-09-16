@@ -101,7 +101,7 @@ private:
         // Send range command to ISI Probe labview
         send_LVCommand(LV_COMMAND_RANGE);
         // Small sleep for labview to register command
-        ros::Duration(0.1).sleep();
+        ros::Duration(0.5).sleep();
         // Send wait command to set ISI Probe labview state after function call
         send_LVCommand(LV_COMMAND_WAIT);
         return true;
@@ -112,7 +112,7 @@ private:
         // Send check command to ISI Probe labview
         send_LVCommand(LV_COMMAND_CHECK);
         // Small sleep for labview to register command
-        ros::Duration(0.1).sleep();
+        ros::Duration(0.5).sleep();
         // Send wait command to set ISI Probe labview state after function call
         send_LVCommand(LV_COMMAND_WAIT);
         return true;
@@ -126,7 +126,7 @@ private:
             // Send acquire command to ISI Probe labview
             send_LVCommand(LV_COMMAND_ACQR);
             // Small sleep for labview to register command
-            ros::Duration(0.1).sleep();
+            ros::Duration(0.5).sleep();
             // Send wait command to set ISI Probe labview state after function call
             send_LVCommand(LV_COMMAND_WAIT);
         } else {
@@ -141,7 +141,7 @@ private:
         // Send stop command to ISI Probe labview
         send_LVCommand(LV_COMMAND_STOP);
         // Small sleep for labview to register command
-        ros::Duration(0.1).sleep();
+        ros::Duration(0.5).sleep();
         // Send wait command to set ISI Probe labview state after function call
         send_LVCommand(LV_COMMAND_WAIT);
         return true;
@@ -152,7 +152,8 @@ class LVControl
 {
 public:
     LVControl(ros::NodeHandle *nh, std::string parent_frame = "map", std::string sensor_frame = "raman")
-    {      
+    {
+        ROS_INFO("Starting ISI LabView process node...");
         parent_frame_ = parent_frame;
         sensor_frame_ = sensor_frame;
 
@@ -166,6 +167,7 @@ public:
         sub_ml_ = nh->subscribe("/isi_hes/ml_raw", 1000, &LVControl::LVmlCb, this);
         sub_header_ = nh->subscribe("/isi_hes/header_raw", 1000, &LVControl::LVheaderCb, this);
         sub_range_ = nh->subscribe("/isi_hes/distance_raw", 1000, &LVControl::LVRangeCb, this);
+        ROS_INFO("ISI LabView process node ready. You can now start the labview program.");
     }
 
 private:
@@ -281,6 +283,10 @@ private:
         catch (tf2::TransformException &ex)
         {
             ROS_WARN("%s", ex.what());
+            return false;
+        }
+        catch (...){
+            ROS_ERROR("Failed to create transfrom in isi hes node");
             return false;
         }
     }
